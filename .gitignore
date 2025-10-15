@@ -1,0 +1,44 @@
+# Environment variables
+.env
+*.env
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Flask
+instance/
+.webassets-cache
+flask_session/
+
+# Uploads and temporary files
+uploads/
+*.mp4
+*.avi
+*.mov
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
