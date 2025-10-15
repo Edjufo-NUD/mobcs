@@ -446,7 +446,7 @@ def compare_dance(user_poses, ref_poses):
         ref_pose_arr = np.array(normalize_pose(ref_pose))
         differences = np.linalg.norm(user_pose_arr - ref_pose_arr, axis=1)
         avg_difference = np.mean(differences)
-        threshold = 1.1  # Increased from 0.9 to compensate for cloud CPU performance
+        threshold = 1.3  # Increased from 0.9 to compensate for cloud CPU performance
         if avg_difference < threshold:
             score = 1.0
         else:
