@@ -222,6 +222,15 @@ def upload_video():
         # After processing the video
         accuracy, feedback = process_video(video_path, dance_poses)
         score = round(accuracy, 2) if accuracy is not None else 0  # Always a number
+        
+        # Delete the video immediately after processing
+        try:
+            if os.path.exists(video_path):
+                os.remove(video_path)
+                print(f"🗑️ Deleted video: {video_path}")
+        except Exception as delete_error:
+            print(f"⚠️ Could not delete video: {delete_error}")
+        
         # Determine dance_name from figure filename
         dance_name = None
         if figure.lower().startswith('tiklostut'):
