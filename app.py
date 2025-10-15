@@ -304,7 +304,7 @@ def extract_pose_landmarks(landmarks):
     visible_count = 0
     for i in LANDMARK_IDS:
         lm = landmarks.landmark[i]
-        if lm.visibility > 0.5:
+        if lm.visibility > 0.4:  # Lowered from 0.5 to accept more landmarks on slower CPU
             x, y, z = lm.x, lm.y, lm.z or 0.0
             visible_count += 1
         else:
@@ -446,7 +446,7 @@ def compare_dance(user_poses, ref_poses):
         ref_pose_arr = np.array(normalize_pose(ref_pose))
         differences = np.linalg.norm(user_pose_arr - ref_pose_arr, axis=1)
         avg_difference = np.mean(differences)
-        threshold = 0.9
+        threshold = 1  # Increased from 0.9 to compensate for cloud CPU performance
         if avg_difference < threshold:
             score = 1.0
         else:
