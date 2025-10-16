@@ -446,21 +446,11 @@ def compare_dance(user_poses, ref_poses):
         ref_pose_arr = np.array(normalize_pose(ref_pose))
         differences = np.linalg.norm(user_pose_arr - ref_pose_arr, axis=1)
         avg_difference = np.mean(differences)
-        
-        # Tiered scoring: MORE lenient for close matches, strict for wrong moves
-        if avg_difference < 0.9:
-            # EXCELLENT: Almost perfect match
+        threshold = 1.3  # Increased from 0.9 to compensate for cloud CPU performance
+        if avg_difference < threshold:
             score = 1.0
-        elif avg_difference < 1.4:
-            # GOOD: Close to correct (very gentle penalty to reward good attempts)
-            # This range should give you 85-100% when you're doing it mostly right
-            score = 1.0 - (avg_difference - 0.9) * 0.3  # Very gentle slope
-        elif avg_difference < 2.0:
-            # FAIR: Noticeable errors (moderate penalty)
-            score = 0.85 - (avg_difference - 1.4) * 1.0  # Medium slope
         else:
-            # POOR: Wrong dance (harsh penalty - drops fast)
-            score = max(0, 0.25 - (avg_difference - 2.0) * 2.0)  # Very steep drop
+            score = max(0, 1 - (avg_difference - threshold))
         errors = {LANDMARK_IDS[idx]: float(diff) for idx, diff in enumerate(differences)}
         total_score += score
         matched_frames += 1
@@ -678,6 +668,6 @@ def resample_poses(poses, target_length):
         return []
     idxs = np.linspace(0, len(poses) - 1, target_length).astype(int)
     return [poses[i] for i in idxs]
-    
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)  # Change port if needed
