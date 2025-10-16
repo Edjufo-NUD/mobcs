@@ -324,113 +324,138 @@ def dtw_score(user_poses, ref_poses):
     return score * 100
 
 def process_video(video_path, dance_poses):
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        print("❌ Error: Could not open video.")
-        return 0.0, {
-            "worst_landmarks": [],
-            "frame_feedback": [],
-            "angle_errors": {},
-            "body_part_feedback": [],
-            "video_error": True,
-            "message": "Could not process the video file. Please try recording again."
-        }
+    cap = None
+    pose = None
+    
+    try:
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            print("❌ Error: Could not open video.")
+            return 0.0, {
+                "worst_landmarks": [],
+                "frame_feedback": [],
+                "angle_errors": {},
+                "body_part_feedback": [],
+                "video_error": True,
+                "message": "Could not process the video file. Please try recording again."
+            }
 
-    mp_pose = mp.solutions.pose
-    pose = mp_pose.Pose()
-    user_poses = []
-    user_poses_flipped = []
+        mp_pose = mp.solutions.pose
+        pose = mp_pose.Pose()
+        user_poses = []
+        user_poses_flipped = []
 
-    frame_skip = 5  # Match xyz.py (was 2)
-    frame_idx = 0
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
-        if frame_idx % frame_skip != 0:
+        frame_skip = 5  # Match xyz.py (was 2)
+        frame_idx = 0
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+            if frame_idx % frame_skip != 0:
+                frame_idx += 1
+                continue
+
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            # Process original
+            results = pose.process(frame_rgb)
+            if results.pose_landmarks:
+                extracted = extract_pose_landmarks(results.pose_landmarks)
+                if extracted:  # Only add if valid
+                    user_poses.append(extracted)
+            # Process flipped
+            frame_rgb_flipped = cv2.flip(frame_rgb, 1)
+            results_flipped = pose.process(frame_rgb_flipped)
+            if results_flipped.pose_landmarks:
+                extracted_flipped = extract_pose_landmarks(results_flipped.pose_landmarks)
+                if extracted_flipped:  # Only add if valid
+                    user_poses_flipped.append(extracted_flipped)
+
             frame_idx += 1
-            continue
 
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        # Process original
-        results = pose.process(frame_rgb)
-        if results.pose_landmarks:
-            extracted = extract_pose_landmarks(results.pose_landmarks)
-            if extracted:  # Only add if valid
-                user_poses.append(extracted)
-        # Process flipped
-        frame_rgb_flipped = cv2.flip(frame_rgb, 1)
-        results_flipped = pose.process(frame_rgb_flipped)
-        if results_flipped.pose_landmarks:
-            extracted_flipped = extract_pose_landmarks(results_flipped.pose_landmarks)
-            if extracted_flipped:  # Only add if valid
-                user_poses_flipped.append(extracted_flipped)
+        print(f"📊 Total valid user poses extracted: {len(user_poses)} (normal), {len(user_poses_flipped)} (flipped)")
 
-        frame_idx += 1
+        # Strict check: require at least 5 valid frames in either normal or flipped
+        if len(user_poses) < 5 and len(user_poses_flipped) < 5:
+            print("❌ No valid body detected in video.")
+            return 0.0, {
+                "worst_landmarks": [],
+                "frame_feedback": [],
+                "angle_errors": {},
+                "body_part_feedback": [],
+                "no_body_detected": True,
+                "message": "No body detected in the video. Please ensure you're visible in the frame and try again."
+            }
 
-    cap.release()
-    print(f"📊 Total valid user poses extracted: {len(user_poses)} (normal), {len(user_poses_flipped)} (flipped)")
+        # --- MOVEMENT THRESHOLD CHECK ---
+        def movement_amount(poses):
+            if len(poses) < 2:
+                return 0.0
+            diffs = [
+                np.linalg.norm(np.array(normalize_pose(poses[i])) - np.array(normalize_pose(poses[i-1])))
+                for i in range(1, len(poses))
+            ]
+            return np.mean(diffs)
 
-    # Strict check: require at least 5 valid frames in either normal or flipped
-    if len(user_poses) < 5 and len(user_poses_flipped) < 5:
-        print("❌ No valid body detected in video.")
+        min_movement = 1.0  # <-- This is the threshold
+
+        user_movement = movement_amount(user_poses)
+        user_movement_flipped = movement_amount(user_poses_flipped)
+
+        if user_movement < min_movement and user_movement_flipped < min_movement:
+            print("❌ Not enough movement detected.")
+            return 0.0, {
+                "worst_landmarks": [],
+                "frame_feedback": [],
+                "angle_errors": {},
+                "body_part_feedback": [],
+                "no_movement_detected": True,
+                "message": "Not enough movement detected. Please perform the dance with more movement."
+            }
+
+        ref_poses = [extract_landmarks_by_id(pose["landmarks"], LANDMARK_IDS) for pose in dance_poses]
+
+        # DTW for best alignment
+        score_normal = dtw_score(user_poses, ref_poses) if user_poses else 0.0
+        score_flipped = dtw_score(user_poses_flipped, ref_poses) if user_poses_flipped else 0.0
+
+        # Resample for feedback (to same length)
+        def resample_for_feedback(user_poses, ref_poses):
+            min_len = min(len(user_poses), len(ref_poses))
+            if min_len == 0:
+                return [], []
+            return resample_poses(user_poses, min_len), resample_poses(ref_poses, min_len)
+
+        if score_flipped > score_normal:
+            print("🔄 Using flipped video for best score.")
+            user_poses_best, ref_poses_best = resample_for_feedback(user_poses_flipped, ref_poses)
+            score, feedback = compare_dance(user_poses_best, ref_poses_best)
+            return score, feedback
+        else:
+            user_poses_best, ref_poses_best = resample_for_feedback(user_poses, ref_poses)
+            score, feedback = compare_dance(user_poses_best, ref_poses_best)
+            return score, feedback
+            
+    except Exception as e:
+        print(f"❌ Critical error in process_video: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return 0.0, {
             "worst_landmarks": [],
             "frame_feedback": [],
             "angle_errors": {},
             "body_part_feedback": [],
-            "no_body_detected": True,
-            "message": "No body detected in the video. Please ensure you're visible in the frame and try again."
+            "processing_error": True,
+            "message": f"Error processing video: {str(e)}"
         }
+    finally:
+        # CRITICAL: Always release resources, even if error occurs
+        if cap is not None:
+            cap.release()
+            print("🔒 Video capture released")
+        if pose is not None:
+            pose.close()
+            print("🔒 MediaPipe Pose model closed")
 
-    # --- MOVEMENT THRESHOLD CHECK ---
-    def movement_amount(poses):
-        if len(poses) < 2:
-            return 0.0
-        diffs = [
-            np.linalg.norm(np.array(normalize_pose(poses[i])) - np.array(normalize_pose(poses[i-1])))
-            for i in range(1, len(poses))
-        ]
-        return np.mean(diffs)
-
-    min_movement = 1.0  # <-- This is the threshold
-
-    user_movement = movement_amount(user_poses)
-    user_movement_flipped = movement_amount(user_poses_flipped)
-
-    if user_movement < min_movement and user_movement_flipped < min_movement:
-        print("❌ Not enough movement detected.")
-        return 0.0, {
-            "worst_landmarks": [],
-            "frame_feedback": [],
-            "angle_errors": {},
-            "body_part_feedback": [],
-            "no_movement_detected": True,
-            "message": "Not enough movement detected. Please perform the dance with more movement."
-        }
-
-    ref_poses = [extract_landmarks_by_id(pose["landmarks"], LANDMARK_IDS) for pose in dance_poses]
-
-    # DTW for best alignment
-    score_normal = dtw_score(user_poses, ref_poses) if user_poses else 0.0
-    score_flipped = dtw_score(user_poses_flipped, ref_poses) if user_poses_flipped else 0.0
-
-    # Resample for feedback (to same length)
-    def resample_for_feedback(user_poses, ref_poses):
-        min_len = min(len(user_poses), len(ref_poses))
-        if min_len == 0:
-            return [], []
-        return resample_poses(user_poses, min_len), resample_poses(ref_poses, min_len)
-
-    if score_flipped > score_normal:
-        print("🔄 Using flipped video for best score.")
-        user_poses_best, ref_poses_best = resample_for_feedback(user_poses_flipped, ref_poses)
-        score, feedback = compare_dance(user_poses_best, ref_poses_best)
-        return score, feedback
-    else:
-        user_poses_best, ref_poses_best = resample_for_feedback(user_poses, ref_poses)
-        score, feedback = compare_dance(user_poses_best, ref_poses_best)
-        return score, feedback
 
 def compare_dance(user_poses, ref_poses):
     total_score, matched_frames = 0.0, 0
@@ -446,11 +471,13 @@ def compare_dance(user_poses, ref_poses):
         ref_pose_arr = np.array(normalize_pose(ref_pose))
         differences = np.linalg.norm(user_pose_arr - ref_pose_arr, axis=1)
         avg_difference = np.mean(differences)
-        threshold = 1.3  # Increased from 0.9 to compensate for cloud CPU performance
+        threshold = 1.3  # Perfect zone threshold
         if avg_difference < threshold:
-            score = 1.0
+            score = 1.0  # 100% for good dances
         else:
-            score = max(0, 1 - (avg_difference - threshold))
+            # STEEPER penalty (2.5x multiplier) to punish wrong dances harder
+            penalty = (avg_difference - threshold) * 2.5
+            score = max(0, 1 - penalty)
         errors = {LANDMARK_IDS[idx]: float(diff) for idx, diff in enumerate(differences)}
         total_score += score
         matched_frames += 1
