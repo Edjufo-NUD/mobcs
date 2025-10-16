@@ -475,8 +475,8 @@ def compare_dance(user_poses, ref_poses):
         if avg_difference < threshold:
             score = 1.0  # 100% for good dances
         else:
-            # STEEPER penalty (2.5x multiplier) to punish wrong dances harder
-            penalty = (avg_difference - threshold) * 2.5
+            # VERY STEEP penalty (3.5x multiplier) to punish wrong dances harder
+            penalty = (avg_difference - threshold) * 3.5
             score = max(0, 1 - penalty)
         errors = {LANDMARK_IDS[idx]: float(diff) for idx, diff in enumerate(differences)}
         total_score += score
