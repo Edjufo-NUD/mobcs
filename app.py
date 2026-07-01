@@ -12,6 +12,7 @@ import numpy as np
 from fastdtw import fastdtw
 from scipy.spatial.distance import euclidean
 
+
 # Load environment variables
 load_dotenv()
 
@@ -22,10 +23,16 @@ CORS(app)
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-print(SUPABASE_URL)
-print(SUPABASE_KEY)
+print("URL:", repr(SUPABASE_URL))
+print("KEY:", repr(SUPABASE_KEY))
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+if not SUPABASE_URL:
+    raise Exception("SUPABASE_URL is missing")
+
+if not SUPABASE_KEY:
+    raise Exception("SUPABASE_KEY is missing")
+
+supabase: Client = create_client(SUPABASE_URL.strip(), SUPABASE_KEY.strip())
 
 # PostgreSQL Database Connection
 DATABASE_URL = os.getenv("DATABASE_URL")
